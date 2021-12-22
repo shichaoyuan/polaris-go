@@ -37,10 +37,6 @@ import (
 	"github.com/polarismesh/polaris-go/pkg/config"
 	"github.com/polarismesh/polaris-go/pkg/model"
 	namingpb "github.com/polarismesh/polaris-go/pkg/model/pb/v1"
-	"github.com/polarismesh/polaris-go/pkg/version"
-	"github.com/polarismesh/polaris-go/plugin/statreporter/monitor"
-	monitorpb "github.com/polarismesh/polaris-go/plugin/statreporter/pb/v1"
-	"github.com/polarismesh/polaris-go/plugin/statreporter/serviceinfo"
 	"github.com/polarismesh/polaris-go/test/mock"
 	"github.com/polarismesh/polaris-go/test/util"
 )
@@ -119,9 +115,7 @@ type MonitorReportSuite struct {
 	// MONITOR
 	grpcMonitor           *grpc.Server
 	discoverLisenter      net.Listener
-	monitorListener       net.Listener
 	discoverToken         string
-	monitorToken          string
 	serviceToken          string
 	instanceId            string
 	instPort              uint32
@@ -145,25 +139,12 @@ func (m *MonitorReportSuite) SetUpSuite(c *check.C) {
 
 	m.grpcServer = util.GetGrpcServer()
 	m.discoverToken = uuid.New().String()
-	m.grpcMonitor = util.GetGrpcServer()
-
-	m.monitorServer = mock.NewMonitorServer()
 
 	m.mockServer = mock.NewNamingServer()
 	m.mockServer.RegisterServerServices(discoverIp, discoverPort)
 
-	m.monitorToken = m.mockServer.RegisterServerService(config.ServerMonitorService)
-	m.mockServer.RegisterServerInstance(
-		mock.MonitorIp, mock.MonitorPort, config.ServerMonitorService, m.monitorToken, true)
 	m.mockServer.RegisterRouteRule(util.BuildNamingService(config.ServerNamespace, config.ServerMonitorService, ""),
 		m.mockServer.BuildRouteRule(config.ServerNamespace, config.ServerMonitorService))
-
-	m.mockServer.RegisterNamespace(&namingpb.Namespace{
-		Name:    &wrappers.StringValue{Value: calledNs},
-		Comment: &wrappers.StringValue{Value: "for service call stat upload"},
-		Owners:  &wrappers.StringValue{Value: "monitor_reporter"},
-		Token:   &wrappers.StringValue{Value: m.monitorToken},
-	})
 
 	m.serviceToken = uuid.New().String()
 	testService := util.BuildNamingService(calledNs, calledSvc, m.serviceToken)
@@ -199,13 +180,6 @@ func (m *MonitorReportSuite) SetUpSuite(c *check.C) {
 	log.Printf("appserver listening on %s:%d\n", discoverIp, discoverPort)
 	util.StartGrpcServer(m.grpcServer, m.discoverLisenter)
 
-	monitorpb.RegisterGrpcAPIServer(m.grpcMonitor, m.monitorServer)
-	m.monitorListener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", mock.MonitorIp, mock.MonitorPort))
-	if nil != err {
-		log.Fatal(fmt.Sprintf("error listening monitor %v", err))
-	}
-	log.Printf("appserver listening on %s:%d\n", mock.MonitorIp, mock.MonitorPort)
-	util.StartGrpcServer(m.grpcMonitor, m.monitorListener)
 }
 
 // 设置changeSvc
@@ -258,7 +232,6 @@ func (m MonitorReportSuite) setupChangeSvc() {
 
 // 关闭测试套件
 func (m *MonitorReportSuite) TearDownSuite(c *check.C) {
-	m.grpcMonitor.Stop()
 	m.grpcServer.Stop()
 	util.DeleteDir(util.BackupDir)
 }
@@ -296,8 +269,6 @@ func (m *MonitorReportSuite) initStatNum() {
 
 // 测试consumerAPI方法的上报
 func (m *MonitorReportSuite) TestMonitorReportConsumer(c *check.C) {
-	m.monitorServer.SetSdkStat(nil)
-	m.monitorServer.SetSvcStat(nil)
 	log.Printf("Start TestMonitorReportConsumer")
 	consumer, err := api.NewConsumerAPIByFile("testdata/monitor.yaml")
 	c.Assert(err, check.IsNil)
@@ -913,17 +884,9 @@ func (m *MonitorReportSuite) TestReportCacheInfo(c *check.C) {
 	log.Printf("all routing revisions changed: %v", revisionsOfRouting)
 	log.Printf("sleeping 15s for reporting cache")
 	time.Sleep(15 * time.Second)
-	svcCaches := m.monitorServer.GetCacheReport(model.ServiceKey{Namespace: changedNs, Service: changedSvc})
 	var svcRevisionsReport []string
 	var routingRevisionsReport []string
-	for _, sc := range svcCaches {
-		for _, r := range sc.InstancesHistory.Revision {
-			svcRevisionsReport = append(svcRevisionsReport, r.Revision)
-		}
-		for _, r := range sc.RoutingHistory.Revision {
-			routingRevisionsReport = append(routingRevisionsReport, r.Revision)
-		}
-	}
+
 	c.Assert(len(svcRevisionsReport), check.Equals, len(routingRevisionsReport))
 	c.Assert(len(revisionsOfRouting), check.Equals, len(revisionsOfSvc))
 	fmt.Printf("len of revisionsOfSvc: %d\n", len(revisionsOfSvc))
@@ -939,8 +902,6 @@ func (m *MonitorReportSuite) TestReportCacheInfo(c *check.C) {
 		c.Assert(svcRevisionsReport[i], check.Equals, revisionsOfSvc[i])
 		c.Assert(routingRevisionsReport[i], check.Equals, revisionsOfRouting[i])
 	}
-	m.monitorServer.SetPluginStat(nil)
-	m.monitorServer.SetCacheReport(nil)
 }
 
 // 获取测试cacheInfo时使用的配置
@@ -949,12 +910,6 @@ func getCacheInfoConfiguration() (*config.ConfigurationImpl, error) {
 	if err != nil {
 		return nil, err
 	}
-	configuration.GetGlobal().GetStatReporter().SetPluginConfig("serviceCache",
-		&serviceinfo.Config{ReportInterval: model.ToDurationPtr(10 * time.Second)})
-	configuration.GetGlobal().GetStatReporter().SetPluginConfig("stat2Monitor", &monitor.Config{
-		MetricsReportWindow: model.ToDurationPtr(10 * time.Minute),
-		MetricsNumBuckets:   6,
-	})
 	return configuration, nil
 }
 
@@ -1160,8 +1115,6 @@ func (m *MonitorReportSuite) TestRecoverAllReport(c *check.C) {
 	defer util.DeleteDir(util.BackupDir)
 	configuration, err := config.LoadConfigurationByFile("testdata/monitor.yaml")
 	c.Assert(err, check.IsNil)
-	configuration.GetGlobal().GetStatReporter().SetPluginConfig("serviceCache",
-		&serviceinfo.Config{ReportInterval: model.ToDurationPtr(5 * time.Second)})
 	configuration.Global.StatReporter.Chain = []string{config.DefaultCacheReporter}
 	configuration.Consumer.LocalCache.ServiceRefreshInterval = model.ToDurationPtr(10 * time.Millisecond)
 	percent := 0.5

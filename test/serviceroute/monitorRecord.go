@@ -32,12 +32,11 @@ import (
 
 // 路由调用记录的key
 type routerKey struct {
-	Namespace     string
-	Service       string
-	Plugin        string
-	SrcNamespace  string
-	SrcService    string
-	RouteRuleType monitorpb.RouteRecord_RuleType
+	Namespace    string
+	Service      string
+	Plugin       string
+	SrcNamespace string
+	SrcService   string
 }
 
 type recordKey struct {

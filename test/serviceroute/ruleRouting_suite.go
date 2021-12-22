@@ -91,8 +91,6 @@ type RuleRoutingTestingSuite struct {
 	grpcServer   *grpc.Server
 	grpcListener net.Listener
 	mockServer   mock.NamingServer
-	mockMonitor  mock.MonitorServer
-	grpcMonitor  *grpc.Server
 	pbServices   map[model.ServiceKey]*namingpb.Service
 }
 
@@ -380,23 +378,12 @@ func (t *RuleRoutingTestingSuite) SetUpSuite(c *check.C) {
 	go func() {
 		t.grpcServer.Serve(t.grpcListener)
 	}()
-	t.mockMonitor, t.grpcMonitor, _, err = util.SetupMonitor(t.mockServer, model.ServiceKey{
-		Namespace: config.ServerNamespace,
-		Service:   config.ServerMonitorService,
-	}, util.RegisteredInstance{
-		IP:      ruleMonitorIPAddr,
-		Port:    ruleMonitorPort,
-		Healthy: true,
-	})
-	if err != nil {
-		log.Fatalf("fail to setup monitor, err %v", err)
-	}
+
 }
 
 // TearDownSuite 结束测试套程序
 func (t *RuleRoutingTestingSuite) TearDownSuite(c *check.C) {
 	t.grpcServer.Stop()
-	t.grpcMonitor.Stop()
 	util.InsertLog(t, c.GetTestLog())
 }
 
@@ -405,7 +392,6 @@ func (t *RuleRoutingTestingSuite) TestInboundRules(c *check.C) {
 	defer util.DeleteDir(util.BackupDir)
 	cfg, err := config.LoadConfigurationByFile("testdata/sr_rule.yaml")
 	c.Assert(err, check.IsNil)
-	setRouteRecordMonitor(cfg)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
@@ -528,7 +514,6 @@ func (t *RuleRoutingTestingSuite) TestReturnDefault(c *check.C) {
 	defer util.DeleteDir(util.BackupDir)
 	cfg, err := config.LoadConfigurationByFile("testdata/sr_rule.yaml")
 	c.Assert(err, check.IsNil)
-	setRouteRecordMonitor(cfg)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
@@ -575,7 +560,6 @@ func (t *RuleRoutingTestingSuite) TestMatchInboundAndOutboundRules(c *check.C) {
 	defer util.DeleteDir(util.BackupDir)
 	cfg, err := config.LoadConfigurationByFile("testdata/sr_rule.yaml")
 	c.Assert(err, check.IsNil)
-	setRouteRecordMonitor(cfg)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
@@ -627,7 +611,6 @@ func (t *RuleRoutingTestingSuite) TestMatchMissingRouteRule(c *check.C) {
 	defer util.DeleteDir(util.BackupDir)
 	cfg, err := config.LoadConfigurationByFile("testdata/sr_rule.yaml")
 	c.Assert(err, check.IsNil)
-	setRouteRecordMonitor(cfg)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()

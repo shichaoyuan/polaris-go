@@ -33,8 +33,6 @@ import (
 	"github.com/polarismesh/polaris-go/pkg/config"
 	"github.com/polarismesh/polaris-go/pkg/model"
 	namingpb "github.com/polarismesh/polaris-go/pkg/model/pb/v1"
-	"github.com/polarismesh/polaris-go/plugin/statreporter/serviceroute"
-	"github.com/polarismesh/polaris-go/test/mock"
 	"github.com/polarismesh/polaris-go/test/util"
 )
 
@@ -55,9 +53,7 @@ const (
 
 // 元数据过滤路由插件测试用例
 type CanaryTestingSuite struct {
-	mockServer   mock.NamingServer
 	grpcServer   *grpc.Server
-	mockMonitor  mock.MonitorServer
 	grpcMonitor  *grpc.Server
 	grpcListener net.Listener
 	serviceToken string
@@ -84,16 +80,6 @@ func (t *CanaryTestingSuite) SetUpSuite(c *check.C) {
 	var err error
 	t.grpcServer = grpc.NewServer(grpcOptions...)
 	t.serviceToken = uuid.New().String()
-	t.mockServer = mock.NewNamingServer()
-	token := t.mockServer.RegisterServerService(config.ServerDiscoverService)
-	t.mockServer.RegisterServerInstance(ipAddr, shopPort, config.ServerDiscoverService, token, true)
-
-	t.mockServer.RegisterNamespace(&namingpb.Namespace{
-		Name:    &wrappers.StringValue{Value: canaryNamespace},
-		Comment: &wrappers.StringValue{Value: "for consumer api test"},
-		Owners:  &wrappers.StringValue{Value: "ConsumerAPI"},
-	})
-	t.mockServer.RegisterServerServices(ipAddr, shopPort)
 	t.testService = &namingpb.Service{
 		Name:      &wrappers.StringValue{Value: canaryService},
 		Namespace: &wrappers.StringValue{Value: canaryNamespace},
@@ -103,7 +89,6 @@ func (t *CanaryTestingSuite) SetUpSuite(c *check.C) {
 	// t.mockServer.GenTestInstances(t.testService, normalInstances)
 	// t.mockServer.GenTestInstancesWithMeta(t.testService, addMetaCount, map[string]string{addMetaKey: addMetaValue})
 
-	namingpb.RegisterPolarisGRPCServer(t.grpcServer, t.mockServer)
 	t.grpcListener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", ipAddr, shopPort))
 	if nil != err {
 		log.Fatal(fmt.Sprintf("error listening appserver %v", err))
@@ -112,14 +97,6 @@ func (t *CanaryTestingSuite) SetUpSuite(c *check.C) {
 	go func() {
 		t.grpcServer.Serve(t.grpcListener)
 	}()
-	t.mockMonitor, t.grpcMonitor, _, err = util.SetupMonitor(t.mockServer, model.ServiceKey{
-		Namespace: config.ServerNamespace,
-		Service:   config.ServerMonitorService,
-	}, util.RegisteredInstance{
-		IP:      canaryMonitorIPAddr,
-		Port:    canaryMonitorPort,
-		Healthy: true,
-	})
 	if err != nil {
 		log.Fatalf("fail to setup monitor, err %v", err)
 	}
@@ -136,26 +113,16 @@ func (t *CanaryTestingSuite) TearDownSuite(c *check.C) {
 func (t *CanaryTestingSuite) TestCanaryNormal01(c *check.C) {
 	DeleteBackUpDir()
 	fmt.Println("-----------TestCanaryNormal01")
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 1, map[string]string{model.CanaryMetaKey: "useV1"})
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 2, map[string]string{model.CanaryMetaKey: "useV2"})
-	t.mockServer.GenTestInstances(t.testService, 3)
-	t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "true")
 	cfg := config.NewDefaultConfiguration(
 		[]string{fmt.Sprintf("%s:%d", canaryIPAddress, canaryPort)})
 	cfg.GetConsumer().GetServiceRouter().SetChain([]string{config.DefaultServiceRouterCanary})
 	cfg.GetGlobal().GetStatReporter().SetChain([]string{config.DefaultServiceRouteReporter})
 	cfg.GetGlobal().GetStatReporter().SetEnable(true)
-	err := cfg.GetGlobal().GetStatReporter().SetPluginConfig(config.DefaultServiceRouteReporter,
-		&serviceroute.Config{ReportInterval: model.ToDurationPtr(1 * time.Second)})
-	c.Assert(err, check.IsNil)
 
 	cfg.GetConsumer().GetLocalCache().SetStartUseFileCache(false)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
-
-	defer t.mockServer.ClearServiceInstances(t.testService)
-	defer t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "false")
 
 	getAllReq := &api.GetAllInstancesRequest{}
 	getAllReq.Namespace = canaryNamespace
@@ -231,25 +198,16 @@ func (t *CanaryTestingSuite) TestCanaryNormal01(c *check.C) {
 // 正常逻辑不带金丝雀标签
 func (t *CanaryTestingSuite) TestCanaryNormal02(c *check.C) {
 	DeleteBackUpDir()
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 1, map[string]string{model.CanaryMetaKey: "useV1"})
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 2, map[string]string{model.CanaryMetaKey: "useV2"})
-	t.mockServer.GenTestInstances(t.testService, 3)
-	t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "true")
 	cfg := config.NewDefaultConfiguration(
 		[]string{fmt.Sprintf("%s:%d", canaryIPAddress, canaryPort)})
 	cfg.GetConsumer().GetServiceRouter().SetChain([]string{config.DefaultServiceRouterCanary})
 	cfg.GetGlobal().GetStatReporter().SetChain([]string{config.DefaultServiceRouteReporter})
 	cfg.GetGlobal().GetStatReporter().SetEnable(true)
-	err := cfg.GetGlobal().GetStatReporter().SetPluginConfig(config.DefaultServiceRouteReporter,
-		&serviceroute.Config{ReportInterval: model.ToDurationPtr(1 * time.Second)})
 	cfg.GetConsumer().GetLocalCache().SetStartUseFileCache(false)
 
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
-
-	defer t.mockServer.ClearServiceInstances(t.testService)
-	defer t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "false")
 
 	getAllReq := &api.GetAllInstancesRequest{}
 	getAllReq.Namespace = canaryNamespace
@@ -301,24 +259,15 @@ func (t *CanaryTestingSuite) TestCanaryNormal02(c *check.C) {
 // 服务不启用金丝雀
 func (t *CanaryTestingSuite) TestCanaryNormal03(c *check.C) {
 	DeleteBackUpDir()
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 2, map[string]string{model.CanaryMetaKey: "useV1"})
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 1, map[string]string{model.CanaryMetaKey: "useV2"})
-	t.mockServer.GenTestInstances(t.testService, 3)
-	t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "false")
 	cfg := config.NewDefaultConfiguration(
 		[]string{fmt.Sprintf("%s:%d", canaryIPAddress, canaryPort)})
 	cfg.GetConsumer().GetServiceRouter().SetChain([]string{config.DefaultServiceRouterCanary})
 	cfg.GetGlobal().GetStatReporter().SetChain([]string{config.DefaultServiceRouteReporter})
 	cfg.GetGlobal().GetStatReporter().SetEnable(true)
-	err := cfg.GetGlobal().GetStatReporter().SetPluginConfig(config.DefaultServiceRouteReporter,
-		&serviceroute.Config{ReportInterval: model.ToDurationPtr(1 * time.Second)})
 	cfg.GetConsumer().GetLocalCache().SetStartUseFileCache(false)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
-
-	defer t.mockServer.ClearServiceInstances(t.testService)
-	defer t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "false")
 
 	getInstancesReq1 := &api.GetInstancesRequest{}
 	getInstancesReq1.FlowID = 1
@@ -341,7 +290,6 @@ func (t *CanaryTestingSuite) TestCanaryNormal03(c *check.C) {
 		c.Assert(v.IsIsolated(), check.Equals, false)
 		c.Assert(v.GetWeight() != 0, check.Equals, true)
 	}
-	t.mockMonitor.SetServiceRouteRecords(nil)
 }
 
 func CircuitBreakerInstance(instance model.Instance, consumer api.ConsumerAPI, c *check.C) {
@@ -458,10 +406,6 @@ func checkGetInstancesByCanaryType(consumer api.ConsumerAPI, instSize int, CType
 func (t *CanaryTestingSuite) TestCanaryException01(c *check.C) {
 	DeleteBackUpDir()
 	fmt.Println("-----------TestCanaryException01")
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 2, map[string]string{model.CanaryMetaKey: "useV1"})
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 1, map[string]string{model.CanaryMetaKey: "useV2"})
-	t.mockServer.GenTestInstances(t.testService, 2)
-	t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "true")
 	cfg := config.NewDefaultConfiguration(
 		[]string{fmt.Sprintf("%s:%d", canaryIPAddress, canaryPort)})
 	cfg.GetConsumer().GetServiceRouter().SetChain([]string{config.DefaultServiceRouterCanary})
@@ -471,15 +415,10 @@ func (t *CanaryTestingSuite) TestCanaryException01(c *check.C) {
 	cfg.GetConsumer().GetCircuitBreaker().GetErrorRateConfig().SetMetricStatTimeWindow(time.Second * 5)
 	cfg.GetGlobal().GetStatReporter().SetChain([]string{config.DefaultServiceRouteReporter})
 	cfg.GetGlobal().GetStatReporter().SetEnable(true)
-	err := cfg.GetGlobal().GetStatReporter().SetPluginConfig(config.DefaultServiceRouteReporter,
-		&serviceroute.Config{ReportInterval: model.ToDurationPtr(1 * time.Second)})
 	cfg.GetConsumer().GetLocalCache().SetStartUseFileCache(false)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
-
-	defer t.mockServer.ClearServiceInstances(t.testService)
-	defer t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "false")
 
 	instMap := SplitInstances(consumer, "useV1")
 	_ = instMap
@@ -633,7 +572,6 @@ func (t *CanaryTestingSuite) TestCanaryException01(c *check.C) {
 	for i := 0; i < 3; i++ {
 		checkGetInstancesByCanaryType(consumer, 2, CanaryInstance, c)
 	}
-	t.mockMonitor.SetServiceRouteRecords(nil)
 }
 
 // 异常测试， 服务启用金丝雀路由，测试不带金丝雀标签, 有1个目标金丝雀实例， 2个正常实例， 1个其他版本金丝实例
@@ -642,10 +580,6 @@ func (t *CanaryTestingSuite) TestCanaryException01(c *check.C) {
 // 带金丝雀标签实例熔断             -- 获取到正常实例
 func (t *CanaryTestingSuite) TestCanaryException02(c *check.C) {
 	defer util.DeleteDir("/Users/angevil/polaris/backup")
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 2, map[string]string{model.CanaryMetaKey: "useV1"})
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 1, map[string]string{model.CanaryMetaKey: "useV2"})
-	t.mockServer.GenTestInstances(t.testService, 2)
-	t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "true")
 	cfg := config.NewDefaultConfiguration(
 		[]string{fmt.Sprintf("%s:%d", canaryIPAddress, canaryPort)})
 	cfg.GetConsumer().GetServiceRouter().SetChain([]string{config.DefaultServiceRouterCanary})
@@ -655,15 +589,10 @@ func (t *CanaryTestingSuite) TestCanaryException02(c *check.C) {
 	cfg.GetConsumer().GetCircuitBreaker().GetErrorRateConfig().SetMetricStatTimeWindow(time.Second * 5)
 	cfg.GetGlobal().GetStatReporter().SetChain([]string{config.DefaultServiceRouteReporter})
 	cfg.GetGlobal().GetStatReporter().SetEnable(true)
-	err := cfg.GetGlobal().GetStatReporter().SetPluginConfig(config.DefaultServiceRouteReporter,
-		&serviceroute.Config{ReportInterval: model.ToDurationPtr(1 * time.Second)})
 	cfg.GetConsumer().GetLocalCache().SetStartUseFileCache(false)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
-
-	defer t.mockServer.ClearServiceInstances(t.testService)
-	defer t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "false")
 
 	instMap := SplitInstances(consumer, "useV1")
 	_ = instMap
@@ -778,9 +707,6 @@ func (t *CanaryTestingSuite) TestCanaryException02(c *check.C) {
 // 金丝雀实例恢复， 获取到金丝雀实例
 func (t *CanaryTestingSuite) TestCanaryException03(c *check.C) {
 	DeleteBackUpDir()
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 1, map[string]string{model.CanaryMetaKey: "useV1"})
-	t.mockServer.GenTestInstances(t.testService, 1)
-	t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "true")
 	cfg := config.NewDefaultConfiguration(
 		[]string{fmt.Sprintf("%s:%d", canaryIPAddress, canaryPort)})
 	cfg.GetConsumer().GetServiceRouter().SetChain([]string{config.DefaultServiceRouterCanary})
@@ -790,15 +716,10 @@ func (t *CanaryTestingSuite) TestCanaryException03(c *check.C) {
 	cfg.GetConsumer().GetCircuitBreaker().GetErrorRateConfig().SetMetricStatTimeWindow(time.Second * 5)
 	cfg.GetGlobal().GetStatReporter().SetChain([]string{config.DefaultServiceRouteReporter})
 	cfg.GetGlobal().GetStatReporter().SetEnable(true)
-	err := cfg.GetGlobal().GetStatReporter().SetPluginConfig(config.DefaultServiceRouteReporter,
-		&serviceroute.Config{ReportInterval: model.ToDurationPtr(1 * time.Second)})
 	cfg.GetConsumer().GetLocalCache().SetStartUseFileCache(false)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
-
-	defer t.mockServer.ClearServiceInstances(t.testService)
-	defer t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "false")
 
 	instMap := SplitInstances(consumer, "useV1")
 	_ = instMap
@@ -887,9 +808,6 @@ func (t *CanaryTestingSuite) TestCanaryException03(c *check.C) {
 // 正常实例恢复， 获取到正常实例
 func (t *CanaryTestingSuite) TestCanaryException04(c *check.C) {
 	DeleteBackUpDir()
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 1, map[string]string{model.CanaryMetaKey: "useV1"})
-	t.mockServer.GenTestInstances(t.testService, 1)
-	t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "true")
 	cfg := config.NewDefaultConfiguration(
 		[]string{fmt.Sprintf("%s:%d", canaryIPAddress, canaryPort)})
 	cfg.GetConsumer().GetServiceRouter().SetChain([]string{config.DefaultServiceRouterCanary})
@@ -899,15 +817,10 @@ func (t *CanaryTestingSuite) TestCanaryException04(c *check.C) {
 	cfg.GetConsumer().GetCircuitBreaker().GetErrorRateConfig().SetMetricStatTimeWindow(time.Second * 5)
 	cfg.GetGlobal().GetStatReporter().SetChain([]string{config.DefaultServiceRouteReporter})
 	cfg.GetGlobal().GetStatReporter().SetEnable(true)
-	err := cfg.GetGlobal().GetStatReporter().SetPluginConfig(config.DefaultServiceRouteReporter,
-		&serviceroute.Config{ReportInterval: model.ToDurationPtr(1 * time.Second)})
 	cfg.GetConsumer().GetLocalCache().SetStartUseFileCache(false)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
-
-	defer t.mockServer.ClearServiceInstances(t.testService)
-	defer t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "false")
 
 	instMap := SplitInstances(consumer, "useV1")
 	_ = instMap
@@ -996,30 +909,21 @@ func (t *CanaryTestingSuite) TestCanaryNormal04(c *check.C) {
 	inst1MetaMap[model.CanaryMetaKey] = "isCanary"
 	inst1MetaMap[internalSetEnableKey] = setEnable
 	inst1MetaMap[internalSetNameKey] = "set1"
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 1, inst1MetaMap)
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 1, inst1MetaMap)
 
 	inst2MetaMap := make(map[string]string)
 	inst2MetaMap[model.CanaryMetaKey] = "AnotherCanary"
 	inst2MetaMap[internalSetEnableKey] = setEnable
 	inst2MetaMap[internalSetNameKey] = "set1"
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 1, inst2MetaMap)
 
 	inst3MetaMap := make(map[string]string)
 	inst3MetaMap[internalSetEnableKey] = setEnable
 	inst3MetaMap[internalSetNameKey] = "set1"
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 1, inst3MetaMap)
-	t.mockServer.GenTestInstancesWithMeta(t.testService, 1, inst3MetaMap)
-
-	t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "true")
 	cfg := config.NewDefaultConfiguration(
 		[]string{fmt.Sprintf("%s:%d", canaryIPAddress, canaryPort)})
 	cfg.GetConsumer().GetServiceRouter().SetChain([]string{config.DefaultServiceRouterSetDivision,
 		config.DefaultServiceRouterCanary})
 	cfg.GetGlobal().GetStatReporter().SetChain([]string{config.DefaultServiceRouteReporter})
 	cfg.GetGlobal().GetStatReporter().SetEnable(true)
-	err := cfg.GetGlobal().GetStatReporter().SetPluginConfig(config.DefaultServiceRouteReporter,
-		&serviceroute.Config{ReportInterval: model.ToDurationPtr(1 * time.Second)})
 	cfg.GetConsumer().GetLocalCache().SetStartUseFileCache(false)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
@@ -1126,15 +1030,10 @@ func (t *CanaryTestingSuite) addInstance(region, zone, campus string, health boo
 		Weight:    &wrappers.UInt32Value{Value: uint32(100)},
 		Healthy:   &wrappers.BoolValue{Value: health},
 		Location:  location}
-	testService := &namingpb.Service{
-		Name:      &wrappers.StringValue{Value: canaryService},
-		Namespace: &wrappers.StringValue{Value: canaryNamespace},
-		Token:     &wrappers.StringValue{Value: t.serviceToken},
-	}
+
 	if metaData != nil {
 		ins.Metadata = metaData
 	}
-	t.mockServer.RegisterServiceInstances(testService, []*namingpb.Instance{ins})
 }
 
 // 和nearbyRouter一起使用
@@ -1147,7 +1046,6 @@ func (t *CanaryTestingSuite) TestCanaryNormal05(c *check.C) {
 	t.addInstance("A", "a", "1", true, nil)
 	t.addInstance("A", "a", "1", true, nil)
 	t.addInstance("A", "a", "1", true, nil)
-	t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "true")
 
 	cfg := config.NewDefaultConfiguration(
 		[]string{fmt.Sprintf("%s:%d", canaryIPAddress, canaryPort)})
@@ -1155,15 +1053,10 @@ func (t *CanaryTestingSuite) TestCanaryNormal05(c *check.C) {
 		config.DefaultServiceRouterCanary})
 	cfg.GetGlobal().GetStatReporter().SetChain([]string{config.DefaultServiceRouteReporter})
 	cfg.GetGlobal().GetStatReporter().SetEnable(true)
-	err := cfg.GetGlobal().GetStatReporter().SetPluginConfig(config.DefaultServiceRouteReporter,
-		&serviceroute.Config{ReportInterval: model.ToDurationPtr(1 * time.Second)})
 	cfg.GetConsumer().GetLocalCache().SetStartUseFileCache(false)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
-
-	defer t.mockServer.ClearServiceInstances(t.testService)
-	defer t.mockServer.SetServiceMetadata(t.serviceToken, model.CanaryMetadataEnable, "false")
 
 	var getOneInstanceReq *api.GetOneInstanceRequest
 	getOneInstanceReq = &api.GetOneInstanceRequest{}

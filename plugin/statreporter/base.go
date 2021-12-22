@@ -15,17 +15,13 @@
  * specific language governing permissions and limitations under the License.
  */
 
-package v1
+package statreporter
 
-import "github.com/golang/protobuf/ptypes/wrappers"
+import (
+	"time"
+)
 
-/**
- * @brief 创建回复
- */
-func NewResponse(id string, code uint32) *StatResponse {
-	return &StatResponse{
-		Id:   &wrappers.StringValue{Value: id},
-		Code: &wrappers.UInt32Value{Value: code},
-		Info: &wrappers.StringValue{Value: code2info[code]},
-	}
-}
+const (
+	opReportStat      = "ReportStat"
+	MinReportInterval = 1 * time.Second
+)

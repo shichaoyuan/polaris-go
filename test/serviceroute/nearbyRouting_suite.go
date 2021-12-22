@@ -56,8 +56,6 @@ type NearbyTestingSuite struct {
 	grpcListener net.Listener
 	serviceToken string
 	mocksvr      mock.NamingServer
-	mockMonitor  mock.MonitorServer
-	grpcMonitor  *grpc.Server
 	testService  *namingpb.Service
 }
 
@@ -153,24 +151,11 @@ func (t *NearbyTestingSuite) SetUpSuite(c *check.C) {
 	go func() {
 		t.grpcServer.Serve(t.grpcListener)
 	}()
-	var err error
-	t.mockMonitor, t.grpcMonitor, _, err = util.SetupMonitor(t.mocksvr, model.ServiceKey{
-		Namespace: config.ServerNamespace,
-		Service:   config.ServerMonitorService,
-	}, util.RegisteredInstance{
-		IP:      srMonitorAddr,
-		Port:    srMonitorPort,
-		Healthy: true,
-	})
-	if err != nil {
-		log.Fatalf("fail to setup monitor, err %v", err)
-	}
 }
 
 // SetUpSuite 结束测试套程序
 func (t *NearbyTestingSuite) TearDownSuite(c *check.C) {
 	t.grpcServer.Stop()
-	t.grpcMonitor.Stop()
 	if util.DirExist(util.BackupDir) {
 		os.RemoveAll(util.BackupDir)
 	}
@@ -183,7 +168,6 @@ func (t *NearbyTestingSuite) getDefaultTestConfiguration(c *check.C) config.Conf
 	c.Assert(err, check.IsNil)
 	cfg.GetGlobal().GetStatReporter().SetEnable(false)
 	cfg.GetGlobal().GetStatReporter().SetEnable(true)
-	setRouteRecordMonitor(cfg)
 	return cfg
 }
 
@@ -791,9 +775,6 @@ func (t *NearbyTestingSuite) TestCase9(c *check.C) {
 	c.Assert(err, check.IsNil)
 	cfg.Global.StatReporter.Chain = []string{config.DefaultServiceRouteReporter}
 	cfg.GetGlobal().GetStatReporter().SetEnable(true)
-	err = cfg.GetGlobal().GetStatReporter().SetPluginConfig(config.DefaultServiceRouteReporter,
-		&serviceroute.Config{ReportInterval: model.ToDurationPtr(1 * time.Second)})
-	c.Assert(err, check.IsNil)
 	sdkCtx, err := api.InitContextByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	consumer := api.NewConsumerAPIByContext(sdkCtx)
@@ -855,9 +836,6 @@ func (t *NearbyTestingSuite) TestCase10(c *check.C) {
 	c.Assert(err, check.IsNil)
 	cfg.Global.StatReporter.Chain = []string{config.DefaultServiceRouteReporter}
 	cfg.GetGlobal().GetStatReporter().SetEnable(true)
-	err = cfg.GetGlobal().GetStatReporter().SetPluginConfig(config.DefaultServiceRouteReporter,
-		&serviceroute.Config{ReportInterval: model.ToDurationPtr(1 * time.Second)})
-	c.Assert(err, check.IsNil)
 	sdkCtx, err := api.InitContextByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	consumer := api.NewConsumerAPIByContext(sdkCtx)
@@ -897,8 +875,6 @@ func (t *NearbyTestingSuite) TestCase11(c *check.C) {
 	cfg, err := config.LoadConfigurationByFile("testdata/sr_nearby.yaml")
 	c.Assert(err, check.IsNil)
 	cfg.Global.StatReporter.Chain = []string{config.DefaultServiceRouteReporter}
-	err = cfg.GetGlobal().GetStatReporter().SetPluginConfig(config.DefaultServiceRouteReporter,
-		&serviceroute.Config{ReportInterval: model.ToDurationPtr(1 * time.Second)})
 	cfg.GetGlobal().GetStatReporter().SetEnable(true)
 	cfg.GetConsumer().GetCircuitBreaker().SetSleepWindow(time.Second * 20)
 	c.Assert(err, check.IsNil)

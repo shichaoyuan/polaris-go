@@ -73,8 +73,6 @@ type SetDivisionTestingSuite struct {
 	grpcServer   *grpc.Server
 	grpcListener net.Listener
 	mockServer   mock.NamingServer
-	mockMonitor  mock.MonitorServer
-	grpcMonitor  *grpc.Server
 	pbServices   map[model.ServiceKey]*namingpb.Service
 }
 
@@ -122,7 +120,6 @@ func (t *SetDivisionTestingSuite) SetUpSuite(c *check.C) {
 // TearDownSuite 结束测试套程序
 func (t *SetDivisionTestingSuite) TearDownSuite(c *check.C) {
 	t.grpcServer.Stop()
-	t.grpcMonitor.Stop()
 	util.InsertLog(t, c.GetTestLog())
 }
 
@@ -196,7 +193,6 @@ func (t *SetDivisionTestingSuite) TestSetExcatMatch(c *check.C) {
 	cfg, err := config.LoadConfigurationByFile("testdata/sr_setdivision.yaml")
 	c.Assert(err, check.IsNil)
 	cfg.GetGlobal().GetStatReporter().SetChain([]string{config.DefaultServiceRouteReporter})
-	cfg.GetGlobal().GetStatReporter().SetPluginConfig(config.DefaultServiceRouteReporter, &serviceroute.Config{ReportInterval: model.ToDurationPtr(1 * time.Second)})
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
@@ -226,7 +222,6 @@ func (t *SetDivisionTestingSuite) TestSetExcatMatch(c *check.C) {
 func (t *SetDivisionTestingSuite) TestSameGroup(c *check.C) {
 	defer util.DeleteDir(util.BackupDir)
 	cfg, err := config.LoadConfigurationByFile("testdata/sr_setdivision.yaml")
-	setRouteRecordMonitor(cfg)
 	c.Assert(err, check.IsNil)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
@@ -260,7 +255,6 @@ func (t *SetDivisionTestingSuite) TestNoSet(c *check.C) {
 	defer util.DeleteDir(util.BackupDir)
 	cfg, err := config.LoadConfigurationByFile("testdata/sr_setdivision.yaml")
 	c.Assert(err, check.IsNil)
-	setRouteRecordMonitor(cfg)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
@@ -290,7 +284,6 @@ func (t *SetDivisionTestingSuite) TestDstNotSet(c *check.C) {
 	defer util.DeleteDir(util.BackupDir)
 	cfg, err := config.LoadConfigurationByFile("testdata/sr_setdivision.yaml")
 	c.Assert(err, check.IsNil)
-	setRouteRecordMonitor(cfg)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
@@ -320,7 +313,6 @@ func (t *SetDivisionTestingSuite) TestAllGroup(c *check.C) {
 	defer util.DeleteDir(util.BackupDir)
 	cfg, err := config.LoadConfigurationByFile("testdata/sr_setdivision.yaml")
 	c.Assert(err, check.IsNil)
-	setRouteRecordMonitor(cfg)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
@@ -357,7 +349,6 @@ func (t *SetDivisionTestingSuite) TestSetNotMatch(c *check.C) {
 	defer util.DeleteDir(util.BackupDir)
 	cfg, err := config.LoadConfigurationByFile("testdata/sr_setdivision.yaml")
 	c.Assert(err, check.IsNil)
-	setRouteRecordMonitor(cfg)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()
@@ -387,7 +378,6 @@ func (t *SetDivisionTestingSuite) TestDestinationSet(c *check.C) {
 	defer util.DeleteDir(util.BackupDir)
 	cfg, err := config.LoadConfigurationByFile("testdata/sr_setdivision.yaml")
 	c.Assert(err, check.IsNil)
-	setRouteRecordMonitor(cfg)
 	consumer, err := api.NewConsumerAPIByConfig(cfg)
 	c.Assert(err, check.IsNil)
 	defer consumer.Destroy()

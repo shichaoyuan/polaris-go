@@ -39,13 +39,18 @@ const (
 	ModeWithAgent
 )
 
-// ServiceMetadata 服务元数据信息
-type ServiceMetadata interface {
-	// 获取服务名
+// ServiceSimple The simplest definition of service information
+type ServiceSimple interface {
+	// GetService get service name
 	GetService() string
-	// 获取命名空间
+	// GetNamespace get the namespace to which the service belongs
 	GetNamespace() string
-	// 获取元数据信息
+}
+
+//ServiceMetadata 服务元数据信息
+type ServiceMetadata interface {
+	ServiceSimple
+	//获取元数据信息
 	GetMetadata() map[string]string
 }
 
@@ -150,13 +155,10 @@ type ActiveDetectStatus interface {
 
 // 服务实例信息
 type Instance interface {
-	// 获取实例四元组标识
+	ServiceSimple
+	//获取实例四元组标识
 	GetInstanceKey() InstanceKey
-	// 实例所在命名空间
-	GetNamespace() string
-	// 实例所在服务名
-	GetService() string
-	// 服务实例唯一标识
+	//服务实例唯一标识
 	GetId() string
 	// 实例的域名/IP信息
 	GetHost() string
