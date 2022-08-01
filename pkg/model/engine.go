@@ -23,11 +23,13 @@ import (
 
 // NotifyTrigger 通知开关，标识本次需要获取哪些资源
 type NotifyTrigger struct {
-	EnableDstInstances bool
-	EnableDstRoute     bool
-	EnableSrcRoute     bool
-	EnableDstRateLimit bool
-	EnableServices     bool
+	EnableDstInstances    bool
+	EnableDstRoute        bool
+	EnableSrcRoute        bool
+	EnableDstRateLimit    bool
+	EnableDstCircuitBreak bool
+	EnableSrcCircuitBreak bool
+	EnableServices        bool
 }
 
 // Clear 清理缓存信息
@@ -36,6 +38,8 @@ func (n *NotifyTrigger) Clear() {
 	n.EnableDstRoute = false
 	n.EnableSrcRoute = false
 	n.EnableDstRateLimit = false
+	n.EnableDstCircuitBreak = false
+	n.EnableSrcCircuitBreak = false
 	n.EnableServices = false
 }
 

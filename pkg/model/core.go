@@ -33,6 +33,8 @@ const (
 	EventRouting EventType = 0x2002
 	// EventRateLimiting 限流配置事件
 	EventRateLimiting EventType = 0x2003
+	// EventCircuitBreaking 熔断配置事件
+	EventCircuitBreaking EventType = 0x2004
 	// EventServices 批量服务
 	EventServices EventType = 0x2005
 )

@@ -7,6 +7,7 @@ import "polaris_service.proto";
 import "polaris_routing.proto";
 import "polaris_client.proto";
 import "polaris_ratelimitrule.proto";
+import "polaris_circuitbreakrule.proto";
 import "meshconfig.proto";
 
 message SimpleResponse {
@@ -24,6 +25,7 @@ message Response {
   Routing routing = 7;
   ServiceAlias alias = 8;
   Rule rateLimit = 9;
+  CircuitBreaker circuitBreaker = 10;
 }
 
 message BatchWriteResponse {
@@ -56,6 +58,7 @@ message DiscoverResponse {
     CLUSTER = 2;
     ROUTING = 3;
     RATE_LIMIT = 4;
+    CIRCUIT_BREAKER = 5;
     SERVICES = 6;
     MESH = 7;
     MESH_CONFIG = 8;
@@ -66,6 +69,7 @@ message DiscoverResponse {
   repeated Instance instances = 5;
   Routing routing = 6;
   RateLimit rateLimit = 7;
+  CircuitBreaker circuitBreaker = 8;
   repeated Service services = 9;
   Mesh mesh = 10;
   MeshConfig meshconfig = 11;

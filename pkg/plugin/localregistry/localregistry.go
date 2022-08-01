@@ -128,6 +128,10 @@ type RuleRegistry interface {
 	GetServiceRateLimitRule(key *model.ServiceKey, includeCache bool) model.ServiceRule
 	// LoadServiceRateLimitRule 非阻塞发起限流规则加载
 	LoadServiceRateLimitRule(key *model.ServiceKey) (*common.Notifier, error)
+	// GetServiceCircuitBreakRule 非阻塞获取熔断规则
+	GetServiceCircuitBreakRule(key *model.ServiceKey, includeCache bool) model.ServiceRule
+	// LoadServiceCircuitBreakRule 非阻塞发起熔断规则加载
+	LoadServiceCircuitBreakRule(key *model.ServiceKey) (*common.Notifier, error)
 	// GetServicesByMeta 非阻塞获取批量服务
 	GetServicesByMeta(key *model.ServiceKey, includeCache bool) model.Services
 	// LoadServices 非阻塞加载批量服务

@@ -167,6 +167,7 @@ func (g *LocalCache) Init(ctx *plugin.InitContext) error {
 	g.eventToCacheHandlers[model.EventInstances] = g.newServiceCacheHandler()
 	g.eventToCacheHandlers[model.EventRouting] = g.newRuleCacheHandler()
 	g.eventToCacheHandlers[model.EventRateLimiting] = g.newRateLimitCacheHandler()
+	g.eventToCacheHandlers[model.EventCircuitBreaking] = g.newCircuitBreakCacheHandler()
 	// 批量服务
 	g.eventToCacheHandlers[model.EventServices] = g.newServicesHandler()
 	g.cachePersistHandler, err = lrplug.NewCachePersistHandler(
@@ -655,6 +656,13 @@ func (g *LocalCache) GetServiceRateLimitRule(key *model.ServiceKey, includeCache
 	return svcRule
 }
 
+func (g *LocalCache) GetServiceCircuitBreakRule(key *model.ServiceKey, includeCache bool) model.ServiceRule {
+	svcEventKey := poolGetSvcEventKey(key, model.EventCircuitBreaking)
+	svcRule := g.GetServiceRule(svcEventKey, includeCache)
+	poolPutSvcEventKey(svcEventKey)
+	return svcRule
+}
+
 // GetServiceRule 非阻塞获取规则信息
 func (g *LocalCache) GetServiceRule(svcEventKey *model.ServiceEventKey, includeCache bool) model.ServiceRule {
 	value, ok := g.serviceMap.Load(*svcEventKey)
@@ -705,6 +713,14 @@ func (g *LocalCache) newRuleCacheHandler() CacheHandlers {
 func (g *LocalCache) newRateLimitCacheHandler() CacheHandlers {
 	return CacheHandlers{
 		CompareMessage:      compareRateLimitRule,
+		MessageToCacheValue: messageToServiceRule,
+		OnEventDeleted:      g.deleteRule,
+	}
+}
+
+func (g *LocalCache) newCircuitBreakCacheHandler() CacheHandlers {
+	return CacheHandlers{
+		CompareMessage:      compareCircuitBreakRule,
 		MessageToCacheValue: messageToServiceRule,
 		OnEventDeleted:      g.deleteRule,
 	}
@@ -801,8 +817,29 @@ func onOriginalRateLimitRuleEmpty(newRuleValue *namingpb.RateLimit) (CachedStatu
 	return CacheNotExists, emptyReplaceHolder
 }
 
+func onOriginalCircuitBreakRuleEmpty(newRuleValue *namingpb.CircuitBreaker) (CachedStatus, string) {
+	if nil != newRuleValue {
+		return CacheNotExists, newRuleValue.GetRevision().GetValue()
+	}
+	return CacheNotExists, emptyReplaceHolder
+}
+
 // 处理当之前缓存值不为空的场景
 func onOriginalRateLimitRuleNotEmpty(oldRevision string, newRuleValue *namingpb.RateLimit) (CachedStatus, string) {
+	if nil != newRuleValue {
+		newRevision := newRuleValue.GetRevision().GetValue()
+		if newRevision != oldRevision {
+			return CacheChanged, newRevision
+		}
+		return CacheNotChanged, newRevision
+	}
+	if len(oldRevision) == 0 {
+		return CacheNotChanged, emptyReplaceHolder
+	}
+	return CacheChanged, emptyReplaceHolder
+}
+
+func onOriginalCircuitBreakRuleNotEmpty(oldRevision string, newRuleValue *namingpb.CircuitBreaker) (CachedStatus, string) {
 	if nil != newRuleValue {
 		newRevision := newRuleValue.GetRevision().GetValue()
 		if newRevision != oldRevision {
@@ -920,6 +957,43 @@ finally:
 	return status
 }
 
+func compareCircuitBreakRule(instValue interface{}, newValue proto.Message) CachedStatus {
+	var status CachedStatus
+	var oldRevision string
+	var newRevision string
+	var resp = newValue.(*namingpb.DiscoverResponse)
+	var ruleValue = resp.GetCircuitBreaker()
+	// 判断server的错误码，是否未变更
+	if resp.GetCode().GetValue() == namingpb.DataNoChange {
+		if reflect2.IsNil(instValue) {
+			status = CacheEmptyButNoData
+		} else {
+			status = CacheNotChanged
+		}
+		goto finally
+	}
+	if reflect2.IsNil(instValue) {
+		oldRevision = emptyReplaceHolder
+		status, newRevision = onOriginalCircuitBreakRuleEmpty(ruleValue)
+	} else {
+		oldRevision = instValue.(model.ServiceRule).GetRevision()
+		status, newRevision = onOriginalCircuitBreakRuleNotEmpty(oldRevision, ruleValue)
+	}
+finally:
+	if status != CacheNotChanged {
+		log.GetBaseLogger().Infof(
+			"circuitbreak rule %s:%s has updated, compare status %s: old revision is %s, new revision is %s",
+			resp.GetService().GetNamespace().GetValue(), resp.GetService().GetName().GetValue(),
+			status, oldRevision, newRevision)
+	} else {
+		log.GetBaseLogger().Debugf(
+			"circuitbreak rule %s:%s is not updated, compare status %s: old revision is %s, new revision is %s",
+			resp.GetService().GetNamespace().GetValue(), resp.GetService().GetName().GetValue(),
+			status, oldRevision, newRevision)
+	}
+	return status
+}
+
 // PB对象转服务实例对象
 func messageToServiceRule(cachedValue interface{}, value proto.Message, svcLocalValue local.ServiceLocalValue, cacheLoaded bool) model.RegistryValue {
 	respInProto := value.(*namingpb.DiscoverResponse)
@@ -976,6 +1050,16 @@ func (g *LocalCache) LoadServiceRateLimitRule(key *model.ServiceKey) (*common.No
 			Service:   key.Service,
 		},
 		Type: model.EventRateLimiting,
+	})
+}
+
+func (g *LocalCache) LoadServiceCircuitBreakRule(key *model.ServiceKey) (*common.Notifier, error) {
+	return g.LoadServiceRule(&model.ServiceEventKey{
+		ServiceKey: model.ServiceKey{
+			Namespace: key.Namespace,
+			Service:   key.Service,
+		},
+		Type: model.EventCircuitBreaking,
 	})
 }
 

@@ -67,6 +67,11 @@ func (p *Proxy) LoadServiceRateLimitRule(key *model.ServiceKey) (*common.Notifie
 	return result, err
 }
 
+// LoadServiceCircuitBreakRule proxy LocalRegistry LoadServiceCircuitBreakRule
+func (p *Proxy) LoadServiceCircuitBreakRule(key *model.ServiceKey) (*common.Notifier, error) {
+	return p.LocalRegistry.LoadServiceCircuitBreakRule(key)
+}
+
 // init 注册proxy
 func init() {
 	plugin.RegisterPluginProxy(common.TypeLocalRegistry, &Proxy{})
